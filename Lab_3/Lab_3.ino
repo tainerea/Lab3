@@ -161,6 +161,7 @@ int right_derror;  //difference between right front and back sensor, this may be
 int derror;       //difference between left and right error to center robot in the hallway
 
 int spinWall = 0;
+int lastState = 0;
 
 #define baud_rate 9600  //set serial communication baud rate
 
@@ -234,6 +235,7 @@ void loop()
 {
   updateSensors();
   wallBang();           //wall following bang-bang control
+  //delay(750);
   //wallP();            //wall following proportional control
   //wallPD();           //wall following PD control
   //follow_hallway();   //robot moves to follow center of hallway when two walls are detected
@@ -251,16 +253,16 @@ void loop()
 */
 void wallBang() {
   digitalWrite(green, LOW);
-  digitalWrite(red, LOW);      
+  digitalWrite(red, LOW);
   Serial.print("\nWallBang: li_cerror ri_cerror\t");
   Serial.print(li_cerror); Serial.print("\t");
   Serial.println(ri_cerror);
-  if (spinWall != 0 && !bitRead(flag, obRight) && !bitRead(flag, obLeft)) {
-    spin(quarter_rotation, spinWall - 1);
-  }
-  
+//  if (spinWall != 0 && !bitRead(flag, obRight) && !bitRead(flag, obLeft)) {
+//    spin(quarter_rotation, spinWall - 1);
+//  }
+
   if (bitRead(state, fright)) {
-    
+    lastState = -3;
     double rightKp = 5;
     double rightKd = 2;
     Serial.println("right wall found");
@@ -289,12 +291,13 @@ void wallBang() {
         Serial.println("\trt wall: too far turn right");
         //Serial.println(abs(rightKp * ri_cerror));
         pivot(quarter_rotation + ((abs(rightKp * ri_cerror))) - rightKd * ri_derror, 1);      //pivot right
-        pivot(quarter_rotation,0);   //pivot left to straighten up
+        pivot(quarter_rotation, 0);  //pivot left to straighten up
       }
     }
   }
 
   else if (bitRead(state, fleft)  ) {
+    lastState = 3;
     //digitalWrite(red, HIGH);
     int leftKp = 5;
     int leftKd = 2;
@@ -345,12 +348,20 @@ void wallBang() {
   }
   else  if (bitRead(state, wander)) {
     Serial.println("nothing to see here, I need to look for a wall");
+    if (lastState = 0) {
     stop();
     delay(500);
     //reverse(half_rotation);
     spin(half_rotation, 0);
     forward(one_rotation);
-    pivot(quarter_rotation,1);
+    pivot(quarter_rotation, 1);
+    }else if (lastState < 0) {
+      spin(quarter_rotation, 0);
+      lastState++;
+    }else {
+      spin(quarter_rotation, 1);
+      lastState--;
+    }
   }
 }
 
@@ -374,27 +385,27 @@ void updateSensors() {
 
 /*
 
-* Description: This function takes in the current value of the Front IR Sensor and computes the actual distance 
-*              to the obstacle.
+  Description: This function takes in the current value of the Front IR Sensor and computes the actual distance
+               to the obstacle.
 
-* Inputs:
+  Inputs:
 
-*          Value: the current value of the Front IR Sensor
+           Value: the current value of the Front IR Sensor
 
-*         
 
-* Outputs:
 
-*          The actual distance to the obstacle in inches
+  Outputs:
+
+           The actual distance to the obstacle in inches
 
 */
-int getFrontDistance(long value){
+int getFrontDistance(long value) {
 
-  double value2 = 10*value + 9847;
+  double value2 = 10 * value + 9847;
 
-  value2 = value2/(153+10*value);
+  value2 = value2 / (153 + 10 * value);
 
-  if (value2 >= 20 || value2 < 0){ //Get rid of junk or invalid signals
+  if (value2 >= 20 || value2 < 0) { //Get rid of junk or invalid signals
     return 0;
   }
 
@@ -402,85 +413,85 @@ int getFrontDistance(long value){
 
 }
 
- 
+
 /*
 
-* Description: This function takes in the current value of the Right IR Sensor and computes the actual distance 
-*              to the obstacle.
+  Description: This function takes in the current value of the Right IR Sensor and computes the actual distance
+               to the obstacle.
 
-* Inputs:
+  Inputs:
 
-*          Value: the current value of the Right IR Sensor
+           Value: the current value of the Right IR Sensor
 
-*         
 
-* Outputs:
 
-*          The actual distance to the obstacle in inches
+  Outputs:
+
+           The actual distance to the obstacle in inches
 
 */
-int getRightDistance(long value){
+int getRightDistance(long value) {
 
-  double value2 = -46*value + 48884.5;
+  double value2 = -46 * value + 48884.5;
 
-  value2 = value2/(485+20*value);
+  value2 = value2 / (485 + 20 * value);
 
   return value2;
 
 }
 
- 
+
 /*
 
-* Description: This function takes in the current value of the Rear IR Sensor and computes the actual distance 
-*              to the obstacle.
+  Description: This function takes in the current value of the Rear IR Sensor and computes the actual distance
+               to the obstacle.
 
-* Inputs:
+  Inputs:
 
-*          Value: the current value of the Rear IR Sensor
+           Value: the current value of the Rear IR Sensor
 
-*         
 
-* Outputs:
 
-*          The actual distance to the obstacle in inches
+  Outputs:
+
+           The actual distance to the obstacle in inches
 
 */
-int getRearDistance(long value){
+int getRearDistance(long value) {
 
-  double value2 = -5*value + 5249;
+  double value2 = -5 * value + 5249;
 
-  value2 = value2/(-249+5*value);
+  value2 = value2 / (-249 + 5 * value);
 
-  if (value2 > 20 || value2 < 0){ //Get rid of junk or invalid signals
+  if (value2 > 20 || value2 < 0) { //Get rid of junk or invalid signals
     return 0;
   }
 
   return value2;
 }
 
- 
+
 /*
 
-* Description: This function takes in the current value of the Left IR Sensor and computes the actual distance 
-*              to the obstacle.
+  Description: This function takes in the current value of the Left IR Sensor and computes the actual distance
+               to the obstacle.
 
-* Inputs:
+  Inputs:
 
-*          Value: the current value of the Left IR Sensor
+           Value: the current value of the Left IR Sensor
 
-*         
 
-* Outputs:
 
-*          The actual distance to the obstacle in inches
+  Outputs:
+
+           The actual distance to the obstacle in inches
 
 */
-int getLeftDistance(long value){
+int getLeftDistance(long value) {
 
-  double value2 = -10*value + 9814;
+  double value2 = -10 * value + 9814;
 
-  value2 = value2/(93+5*value);
+  value2 = value2 / (93 + 5 * value);
 
   return value2;
 
@@ -496,27 +507,33 @@ void updateIR() {
   back = getRearDistance(analogRead(irRear));            //read back IR sensor
   li_curr = getLeftDistance(analogRead(irLeft));            //read left IR sensor
   ri_curr = getRightDistance(analogRead(irRight));          //read right IR sensor
+  Serial.print("ri_curr = ");
+  Serial.println(ri_curr);
 
   if (ri_curr < 12 && ri_curr > 0) {
+    Serial.println("following right wall");
     bitSet(flag, obRight);            //set the right obstacle
-  }else {
-    if (bitRead(state, fright) == 0){
-      Serial.println("................................");
+    Serial.print("right wall obRight set\t\t");
+    Serial.println(obRight);
+  } else {
+    if (bitRead(flag, obRight) == 1) {
+      Serial.println("Spin Wall modified");
       spinWall = 2;
     }
     bitClear(flag, obRight);          //clear the right obstacle
   }
 
-  if (li_curr < 8 && li_curr > 0) {
+  if (li_curr < 12 && li_curr > 0) {
+    Serial.println("Left Wall ..........................");
     bitSet(flag, obLeft);
-  }else {
-    if (bitRead(state, fleft) == 0){
-      Serial.println("...................................");
+  } else {
+    if (bitRead(flag, obLeft) == 1) {
+      Serial.println("Spin Wall modified");
       spinWall = 1;
     }
     bitClear(flag, obLeft);           //clear the left obstacle
   }
-  
+
   li_curr += 2;
   if (front < 12 && front > 0) {
     //Serial.println("set front obstacle bit");
@@ -530,26 +547,26 @@ void updateIR() {
   //  Serial.print(back); Serial.print("\t");
   //  Serial.print(left); Serial.print("\t");
   //  Serial.println(right);
-//  if (right > irMin - 50) {
-//    //Serial.println("\t\tset right obstacle");
-//    bitSet(flag, obRight);            //set the right obstacle
-//  }
-//  else
-//    bitClear(flag, obRight);          //clear the right obstacle
-//
-//  if (left > irMin - 50) {
-//    //Serial.println("\t\tset left obstacle");
-//    bitSet(flag, obLeft);             //set the left obstacle
-//  }
-//  else
-//    bitClear(flag, obLeft);           //clear the left obstacle
-//
-//  if (front > irMax - 50) {
-//    //Serial.println("set front obstacle bit");
-//    bitSet(flag, obFront);            //set the front obstacle
-//  }
-//  else
-//    bitClear(flag, obFront);          //clear the front obstacle
+  //  if (right > irMin - 50) {
+  //    //Serial.println("\t\tset right obstacle");
+  //    bitSet(flag, obRight);            //set the right obstacle
+  //  }
+  //  else
+  //    bitClear(flag, obRight);          //clear the right obstacle
+  //
+  //  if (left > irMin - 50) {
+  //    //Serial.println("\t\tset left obstacle");
+  //    bitSet(flag, obLeft);             //set the left obstacle
+  //  }
+  //  else
+  //    bitClear(flag, obLeft);           //clear the left obstacle
+  //
+  //  if (front > irMax - 50) {
+  //    //Serial.println("set front obstacle bit");
+  //    bitSet(flag, obFront);            //set the front obstacle
+  //  }
+  //  else
+  //    bitClear(flag, obFront);          //clear the front obstacle
 
   //  if (back > irMin - 25) {
   //    //Serial.println("set back obstacle bit");
@@ -565,22 +582,20 @@ void updateIR() {
   Serial.print("Left: ");
   Serial.println(li_curr);
   Serial.println(ri_curr);
-  if ((ri_curr < irMax)){
+  if ((ri_curr < irMax)) {
     ri_cerror = ri_curr - irMax;//calculate current error (too far positive, too close negative)
-  }else if ((ri_curr > irMin)){
+  } else if ((ri_curr > irMin)) {
     ri_cerror = ri_curr - irMin;
-  }else
+  } else
     ri_cerror = 0;                  //set error to zero if robot is in dead band
   ri_derror = ri_cerror - ri_perror; //calculate change in error
   ri_perror = ri_cerror;            //log current error as previous error [left sonar]
 
-  if (li_curr < irMax){
-    Serial.println("To Close: ----------------------------");
+  if (li_curr < irMax) {
     li_cerror = li_curr - irMax;   //calculate current error
-  }else if (li_curr > irMin) {
-    Serial.println("To Far: ----------------------------");
+  } else if (li_curr > irMin) {
     li_cerror = li_curr - irMin;   //calculate current error
-  }else
+  } else
     li_cerror = 0;                  //error is zero if in deadband
   li_derror = li_cerror - li_perror; //calculate change in error
   li_perror = li_cerror;                //log reading as previous error
@@ -762,14 +777,14 @@ void updateState() {
     bitClear(state, wander);  //clear wander state
     bitClear(state, center);  //clear follow wall state
   }
-//  else if (bitRead(flag, obLeft) && bitRead(flag, obRight) ) {
-//    Serial.println("\tset follow hallway state");
-//    bitSet(state, center);      //set the hallway state
-//    //clear all other bits
-//    bitClear(state, fright);    //clear follow wall state
-//    bitClear(state, wander);    //clear wander state
-//    bitClear(state, fleft);     //clear follow wall state
-//  }
+  //  else if (bitRead(flag, obLeft) && bitRead(flag, obRight) ) {
+  //    Serial.println("\tset follow hallway state");
+  //    bitSet(state, center);      //set the hallway state
+  //    //clear all other bits
+  //    bitClear(state, fright);    //clear follow wall state
+  //    bitClear(state, wander);    //clear wander state
+  //    bitClear(state, fleft);     //clear follow wall state
+  //  }
 
   //print flag byte
   //  Serial.println("\trtSNR\tltSNR\tltIR\trtIR\trearIR\tftIR");
