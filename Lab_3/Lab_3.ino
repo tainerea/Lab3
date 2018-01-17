@@ -262,7 +262,7 @@ void wallBang() {
 //  }
 
   if (bitRead(state, fright)) {
-    lastState = -3;
+    lastState = -1;
     double rightKp = 5;
     double rightKd = 2;
     Serial.println("right wall found");
@@ -297,7 +297,7 @@ void wallBang() {
   }
 
   else if (bitRead(state, fleft)  ) {
-    lastState = 3;
+    lastState = 1;
     //digitalWrite(red, HIGH);
     int leftKp = 5;
     int leftKd = 2;
@@ -348,18 +348,22 @@ void wallBang() {
   }
   else  if (bitRead(state, wander)) {
     Serial.println("nothing to see here, I need to look for a wall");
-    if (lastState = 0) {
-    stop();
-    delay(500);
-    //reverse(half_rotation);
-    spin(half_rotation, 0);
-    forward(one_rotation);
-    pivot(quarter_rotation, 1);
+    if (lastState == 0) {
+      stop();
+      delay(500);
+      //reverse(half_rotation);
+      spin(half_rotation, 0);
+      forward(one_rotation);
+      pivot(quarter_rotation, 1);
     }else if (lastState < 0) {
-      spin(quarter_rotation, 0);
+      forward(quarter_rotation);
+      spin(half_rotation, 1);
+      forward(one_rotation);
       lastState++;
     }else {
-      spin(quarter_rotation, 1);
+      forward(quarter_rotation);
+      spin(half_rotation, 0);
+      forward(one_rotation);
       lastState--;
     }
   }
