@@ -256,6 +256,7 @@ void wallBang() {
   if (bitRead(state, fright)) {
     
     double rightKp = 5;
+    double rightKd = 2;
     Serial.println("right wall found");
     if (bitRead(flag, obFront)) { //check for a front wall before moving
       Serial.print("right wall: front corner ");
@@ -265,7 +266,7 @@ void wallBang() {
     }
     if (ri_cerror == 0) {                 //no error, robot in deadband
       Serial.println("right wall detected, drive forward");
-      forward(two_rotation);            //move robot forward
+      forward(one_rotation);            //move robot forward
     }
     else {
       //Serial.println("rt wall: adjust turn angle based upon error");
@@ -273,14 +274,14 @@ void wallBang() {
         digitalWrite(green, HIGH);
         //Serial.println(abs(rightKp * ri_cerror));
         Serial.println("\trt wall: too close turn left");
-        pivot(quarter_rotation + ((abs(rightKp * ri_cerror))), 0);
+        pivot(quarter_rotation + (abs(rightKp * ri_cerror)) - rightKd * ri_derror, 0);
         pivot(quarter_rotation, 1);   //pivot right to straighten up
       }
       else if (ri_cerror > 0) {     //positive error means too far
         digitalWrite(red, HIGH);
         Serial.println("\trt wall: too far turn right");
         //Serial.println(abs(rightKp * ri_cerror));
-        pivot(quarter_rotation + ((abs(rightKp * ri_cerror))), 1);      //pivot right
+        pivot(quarter_rotation + ((abs(rightKp * ri_cerror))) - rightKd * ri_derror, 1);      //pivot right
         pivot(quarter_rotation,0);   //pivot left to straighten up
       }
     }
@@ -289,6 +290,7 @@ void wallBang() {
   else if (bitRead(state, fleft)  ) {
     //digitalWrite(red, HIGH);
     int leftKp = 5;
+    int leftKd = 2;
     if (bitRead(flag, obFront)) { //check for a front wall before moving forward
       //make right turn if wall found
       Serial.print("left wall: front corner ");
@@ -298,18 +300,18 @@ void wallBang() {
     }
     if (li_cerror == 0) {           //no error robot in dead band drives forward
       //Serial.println("lt wall detected, drive forward");
-      forward(two_rotation);      //move robot forward
+      forward(one_rotation);      //move robot forward
     }
     else {
       //Serial.println("lt wall detected: adjust turn angle based upon error");
       if (li_cerror < 0) { //negative error means too close
         //Serial.println("\tlt wall: too close turn right");
-        pivot(quarter_rotation + abs(leftKp * li_cerror), 1);      //pivot right
+        pivot(quarter_rotation + abs(leftKp * li_cerror) - leftKd * li_derror, 1);      //pivot right
         pivot(quarter_rotation, 0);   //pivot left
       }
       else if (li_cerror > 0)  { //positive error means too far
         //Serial.println("\tlt wall: too far turn left");
-        pivot(quarter_rotation + abs(leftKp * li_cerror), 0);      //pivot left
+        pivot(quarter_rotation + abs(leftKp * li_cerror) - leftKd * li_derror, 0);      //pivot left
         pivot(quarter_rotation, 1);   //pivot right
       }
     }
