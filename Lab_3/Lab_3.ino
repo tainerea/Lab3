@@ -79,8 +79,8 @@ NewPing sonarRt(snrRight, snrRight);  //create an instance of the right sonar
 //define sensor constants and variables
 #define irMin    6               // IR minimum threshold for wall (use a deadband of 4 to 6 inches)
 #define irMax    4               // IR maximum threshold for wall (use a deadband of 4 to 6 inches)
-#define snrMin   400               // sonar minimum threshold for wall (use a deadband of 4 to 6 inches)
-#define snrMax   600               // sonar maximum threshold for wall (use a deadband of 4 to 6 inches)
+#define snrMin   4               // sonar minimum threshold for wall (use a deadband of 4 to 6 inches)
+#define snrMax   6               // sonar maximum threshold for wall (use a deadband of 4 to 6 inches)
 
 int irFrontArray[5] = {0, 0, 0, 0, 0};//array to hold 5 front IR readings
 int irRearArray[5] = {0, 0, 0, 0, 0}; //array to hold 5 back IR readings
@@ -159,6 +159,8 @@ int left_derror;   //difference between left front and back sensor, this may be 
 int right_derror;  //difference between right front and back sensor, this may be useful for adjusting the turn angle
 
 int derror;       //difference between left and right error to center robot in the hallway
+
+int spinWall = 0;
 
 #define baud_rate 9600  //set serial communication baud rate
 
@@ -253,6 +255,10 @@ void wallBang() {
   Serial.print("\nWallBang: li_cerror ri_cerror\t");
   Serial.print(li_cerror); Serial.print("\t");
   Serial.println(ri_cerror);
+  if (spinWall != 0 && !bitRead(flag, obRight) && !bitRead(flag, obLeft)) {
+    spin(quarter_rotation, spinWall - 1);
+  }
+  
   if (bitRead(state, fright)) {
     
     double rightKp = 5;
@@ -261,12 +267,13 @@ void wallBang() {
     if (bitRead(flag, obFront)) { //check for a front wall before moving
       Serial.print("right wall: front corner ");
       //make left turn if wall found
-      reverse(two_rotation);              //back up
-      spin(three_rotation, 0);              //turn left
+      //reverse(two_rotation);              //back up
+      spin(quarter_rotation, 0);              //turn left
+      return;
     }
     if (ri_cerror == 0) {                 //no error, robot in deadband
       Serial.println("right wall detected, drive forward");
-      forward(one_rotation);            //move robot forward
+      forward(half_rotation);            //move robot forward
     }
     else {
       //Serial.println("rt wall: adjust turn angle based upon error");
@@ -295,12 +302,13 @@ void wallBang() {
       //make right turn if wall found
       Serial.print("left wall: front corner ");
       //make left turn if wall found
-      reverse(two_rotation);              //back up
-      spin(three_rotation, 1);              //turn right
+      //reverse(two_rotation);              //back up
+      spin(quarter_rotation, 1);              //turn right
+      return;
     }
     if (li_cerror == 0) {           //no error robot in dead band drives forward
       //Serial.println("lt wall detected, drive forward");
-      forward(one_rotation);      //move robot forward
+      forward(half_rotation);      //move robot forward
     }
     else {
       //Serial.println("lt wall detected: adjust turn angle based upon error");
@@ -491,21 +499,30 @@ void updateIR() {
 
   if (ri_curr < 12 && ri_curr > 0) {
     bitSet(flag, obRight);            //set the right obstacle
-  }else
+  }else {
+    if (bitRead(state, fright) == 0){
+      Serial.println("................................");
+      spinWall = 2;
+    }
     bitClear(flag, obRight);          //clear the right obstacle
+  }
 
   if (li_curr < 8 && li_curr > 0) {
     bitSet(flag, obLeft);
-  }else
+  }else {
+    if (bitRead(state, fleft) == 0){
+      Serial.println("...................................");
+      spinWall = 1;
+    }
     bitClear(flag, obLeft);           //clear the left obstacle
-
-  li_curr += 2;
-   if (front < 4) {
-    //Serial.println("set front obstacle bit");
-    //bitSet(flag, obFront);            //set the front obstacle
   }
-  //else
-    //bitClear(flag, obFront);          //clear the front obstacle
+  
+  li_curr += 2;
+  if (front < 12 && front > 0) {
+    //Serial.println("set front obstacle bit");
+    bitSet(flag, obFront);            //set the front obstacle
+  } else
+    bitClear(flag, obFront);          //clear the front obstacle
 
   //  print IR data
   //  Serial.println("frontIR\tbackIR\tleftIR\trightIR");
@@ -607,6 +624,13 @@ void updateSonar() {
   digitalWrite(snrLeft, LOW);   //set pin low first again
   pinMode(snrLeft, INPUT);      //set pin as input with duration as reception
   left = pulseIn(snrLeft, HIGH);//measures how long the pin is high
+
+  if (right < 12) {
+    bitSet(flag, obFront);
+  }
+  if (left < 12) {
+    bitSet(flag, obFront);
+  }
 
   ///////////////////////update variables
   //  Serial.print(left); Serial.print("\t");
