@@ -4,19 +4,30 @@
 /*RobotPDControl.ino
   Author: Carlotta. A. Berry
   Date: December 31, 2016
-  This program will provide a template for an example of implementing a behavior-based control architecture
-  for a mobile robot to implement wall following and random wander.  It will also show how to implement the basic structure for
-  bang-bang, proportional and PD control. This is just a template to give you a start, freel free to brainstorm and create
-  your own state machine and subsumption architecture.
 
-  The flag byte (8 bits) variable will hold the IR and sonar data [X X snrRight snrLeft irLeft irRight irRear irFront]
-  The state byte (8 bits) variable will hold the state information as well as motor motion [X X X wander runAway collide rev fwd]
+  This program provides the functionality of allowing a robot to perform basic wall folowing.  
+  The functions that this robot can perform are:
 
-  Use the following functions to read, clear and set bits in the byte
-  bitRead(state, wander)) { // check if the wander state is active
-  bitClear(state, wander);//clear the the wander state
-  bitSet(state, wander);//set the wander state
+     Follow Right wall
+     Follow Left Wall
+     Follow the Center of two walls
+     Navigate an inner corner
+     Navigate an outer corner
 
+  This functionality is primarily present in wallBang()
+
+  Wall Bang - This function contains the logic for making the robot follow a wall with PD control.  The state
+               variable is used to track the current state of the robot.  If the robot only detects a wall on one
+               side, then it will follow that wall.  If a wall is detected on both sides of the robot, then the 
+               follow center code takes over.  If no walls are detected, then the robot will enter random wander.
+
+  Additionally, to update sensor values and determine state there are the following functions
+
+    updateIR() - This function updates the current IR values of all four IR sensors
+    updateSonar2() - This function updates the current IR values of all two Sonar sensors
+    updateError() - This function updates the errors of each for every wall (right error, left error, distance from center)
+    updateState() - This function updates the state of the robot
+ 
   Hardware Connections:
   Stepper Enable          Pin 48
   Right Stepper Step      Pin 52
@@ -25,9 +36,9 @@
   Left Stepper Direction  Pin 51
 
   Front IR    A8
-  Back IR     A9
-  Right IR    A10
-  Left IR     A11
+  Back IR     A15
+  Right IR    A11
+  Left IR     A9
   Left Sonar  A12
   Right Sonar A13
   Button      A15
@@ -129,11 +140,11 @@ byte layers = 4;
 #define fwLayer 2     //follow wall layer
 #define fhLayer 3     //follow hallway layer
 
-#define green 9
-#define red 8
+#define green 9       //The pin number of the green led
+#define red 8         //The pin number of the red led
 
 //define PD control global variables, curr_error = current reading - setpoint, prev_error = curr_error on previous iteration
-//store previous error to calculate derror = curr_error-prev_error, side_derror = side front sensor - side back sensor
+//store previous error to calculate, derror = curr_error-prev_error, side_derror = side front sensor - side back sensor
 //store derror = difference between left and right error (used for hall follow to center the robot)
 
 int ls_curr;    //left sonar current reading
@@ -160,8 +171,7 @@ int right_derror;  //difference between right front and back sensor, this may be
 
 int derror;       //difference between left and right error to center robot in the hallway
 
-int spinWall = 0;
-int lastState = 0;
+int lastState = 0;  //Tracks the lats state that the robot was in.  This is used for outside corners.
 
 #define baud_rate 9600  //set serial communication baud rate
 
@@ -206,14 +216,13 @@ void runToStop( void );
 #line 162 "C:\\Users\\moormaet\\AppData\\Local\\Temp\\Rar$DIa0.576\\lab_3\\lab_3.ino"
 void setup()
 {
-  //stepper Motor set up
   pinMode(rtStepPin, OUTPUT);                 //sets pin as output
   pinMode(rtDirPin, OUTPUT);                  //sets pin as output
   pinMode(ltStepPin, OUTPUT);                 //sets pin as output
   pinMode(ltDirPin, OUTPUT);                  //sets pin as output
   pinMode(stepperEnable, OUTPUT);             //sets pin as output
-  pinMode(green, OUTPUT);
-  pinMode(red, OUTPUT);
+  pinMode(green, OUTPUT);                     //sets green pin as output
+  pinMode(red, OUTPUT);                       //sets red pin as output
   digitalWrite(stepperEnable, stepperEnFalse);//turns off the stepper motor driver
   stepperRight.setMaxSpeed(max_spd);          //set the maximum permitted speed limited by processor and clock speed, no greater than 4000 steps/sec on Arduino
   stepperRight.setAcceleration(max_accel);    //set desired acceleration in steps/s^2
@@ -225,31 +234,31 @@ void setup()
   steppers.addStepper(stepperLeft);           //add left motor to MultiStepper
   digitalWrite(stepperEnable, stepperEnTrue); //turns on the stepper motor driver
   digitalWrite(enableLED, HIGH);              //turn on enable LED
-  //Timer1.initialize(timer_int);               //initialize timer1, and set a period in microseconds
-  //Timer1.attachInterrupt(updateSensors);      //attaches updateSensors() as a timer overflow interrupt
   Serial.begin(baud_rate);                    //start serial communication in order to debug the software while coding
   delay(1500);                                //wait 3 seconds before robot moves
 }
 
 void loop()
 {
-  updateSensors();
-  wallBang();           //wall following bang-bang control
-  //delay(750);
-  //wallP();            //wall following proportional control
-  //wallPD();           //wall following PD control
-  //follow_hallway();   //robot moves to follow center of hallway when two walls are detected
-  //wander();           //random wander behavior
-  //avoid();            //avoid obstacle behavior
-  //delay(500);     //added so that you can read the data on the serial monitor
+  updateSensors();      //Updates all of the sensor values and decides the robot state
+  wallBang();           //wall following PD control
 }
 
 /*
-   This is a sample wallBang() function, the description and code should be updated to reflect the actual robot motion function that you will implement
-   based upon the the lab requirements.  Some things to consider, you cannot use a blocking motor function because you need to use sensor data to update
-   movement.  You also need to continue to poll    the sensors during the motion and update flags and state because this will serve as your interrupt to
-   stop or change movement. This function will have the robot follow the wall if it is within 4 to 6 inches from the wall by moving forward and turn on the
-   controller if it is outside that band to make an adjustment to get back within the band.
+
+  Description: This function contains the logic for making the robot follow a wall with PD control.  The state
+               variable is used to track the current state of the robot.  If the robot only detects a wall on one
+               side, then it will follow that wall.  If a wall is detected on both sides of the robot, then the 
+               follow center code takes over.  If no walls are detected, then the robot will enter random wander.
+
+  Inputs:
+
+           VOID
+
+  Outputs:
+
+           VOID
+
 */
 void wallBang() {
   digitalWrite(green, LOW);
@@ -257,132 +266,137 @@ void wallBang() {
   Serial.print("\nWallBang: li_cerror ri_cerror\t");
   Serial.print(li_cerror); Serial.print("\t");
   Serial.println(ri_cerror);
-//  if (spinWall != 0 && !bitRead(flag, obRight) && !bitRead(flag, obLeft)) {
-//    spin(quarter_rotation, spinWall - 1);
-//  }
 
   if (bitRead(state, fright)) {
-    lastState = -1;
-    double rightKp = 5;
-    double rightKd = 2;
+    lastState = -1;  // Record the last state as right (-1)
+    double rightKp = 5;  // The proportional constant for the right wall
+    double rightKd = 2;  // The derivative constant for the right wall
     Serial.println("right wall found");
     if (bitRead(flag, obFront)) { //check for a front wall before moving
       Serial.print("right wall: front corner ");
-      //make left turn if wall found
-      //reverse(two_rotation);              //back up
+      //make left turn if wall found (inner corner)
       spin(quarter_rotation, 0);              //turn left
       return;
     }
-    if (ri_cerror == 0) {                 //no error, robot in deadband
+    if (ri_cerror == 0) {                 //no error, robot in deadband (4-6 inches)
       Serial.println("right wall detected, drive forward");
-      forward(half_rotation);            //move robot forward
+      forward(quarter_rotation);            //move robot forward
     }
     else {
-      //Serial.println("rt wall: adjust turn angle based upon error");
       if (ri_cerror < 0) {          //negative error means too close
-        digitalWrite(green, HIGH);
-        //Serial.println(abs(rightKp * ri_cerror));
+        digitalWrite(green, HIGH);  //Turn on the green light
+
         Serial.println("\trt wall: too close turn left");
-        pivot(quarter_rotation + (abs(rightKp * ri_cerror)) - rightKd * ri_derror, 0);
+        pivot(quarter_rotation + (abs(rightKp * ri_cerror)) - rightKd * ri_derror, 0);  //Make the larger (left) pivot
         pivot(quarter_rotation, 1);   //pivot right to straighten up
       }
       else if (ri_cerror > 0) {     //positive error means too far
-        digitalWrite(red, HIGH);
+        digitalWrite(red, HIGH);  // turn on the red light
         Serial.println("\trt wall: too far turn right");
-        //Serial.println(abs(rightKp * ri_cerror));
-        pivot(quarter_rotation + ((abs(rightKp * ri_cerror))) - rightKd * ri_derror, 1);      //pivot right
+
+        pivot(quarter_rotation + ((abs(rightKp * ri_cerror))) - rightKd * ri_derror, 1);      //Make te larger (right) pivot
         pivot(quarter_rotation, 0);  //pivot left to straighten up
       }
     }
   }
 
   else if (bitRead(state, fleft)  ) {
-    lastState = 1;
-    //digitalWrite(red, HIGH);
-    int leftKp = 5;
-    int leftKd = 2;
+    lastState = 1;  // set the last state to be left (1)
+    int leftKp = 5;  //The proportional constant for the left wall
+    int leftKd = 2;  //Yhe derivative constant for the right wwall
     if (bitRead(flag, obFront)) { //check for a front wall before moving forward
-      //make right turn if wall found
+
       Serial.print("left wall: front corner ");
-      //make left turn if wall found
-      //reverse(two_rotation);              //back up
+      //make right turn if wall found
+
       spin(quarter_rotation, 1);              //turn right
       return;
     }
     if (li_cerror == 0) {           //no error robot in dead band drives forward
       //Serial.println("lt wall detected, drive forward");
-      forward(half_rotation);      //move robot forward
+      forward(quarter_rotation);      //move robot forward
     }
     else {
-      //Serial.println("lt wall detected: adjust turn angle based upon error");
       if (li_cerror < 0) { //negative error means too close
-        //Serial.println("\tlt wall: too close turn right");
-        pivot(quarter_rotation + abs(leftKp * li_cerror) - leftKd * li_derror, 1);      //pivot right
-        pivot(quarter_rotation, 0);   //pivot left
+
+        pivot(quarter_rotation + abs(leftKp * li_cerror) - leftKd * li_derror, 1);      //make larger (right) pivot
+        pivot(quarter_rotation, 0);   //pivot left to straighten
       }
       else if (li_cerror > 0)  { //positive error means too far
-        //Serial.println("\tlt wall: too far turn left");
-        pivot(quarter_rotation + abs(leftKp * li_cerror) - leftKd * li_derror, 0);      //pivot left
-        pivot(quarter_rotation, 1);   //pivot right
+ 
+        pivot(quarter_rotation + abs(leftKp * li_cerror) - leftKd * li_derror, 0);      //make larger (left) pivot
+        pivot(quarter_rotation, 1);   //pivot right to straighten
       }
     }
   }
   else if (bitRead(state, center) ) {//follow hallway
+      double rightKp = 5;  //The right proportional constant
+    double rightKd = 2;  //The right derivative constant
+    int leftKp = 5;  //The left proportional constant
+    int leftKd = 2;  //The left derivative constant
     if (((ri_cerror == 0) && (li_cerror == 0)) || (derror == 0)) {
-      //Serial.println("hallway detected, drive forward");
-      forward(two_rotation);          //drive robot forward
+      forward(quarter_rotation);          //drive robot forward
     }
     else {
-      //Serial.println("hallway detected: adjust turn angle based upon error");
-      //try to average the error between the left and right to center the robot
+
       if (derror > 0) {
-        spin(quarter_rotation, 1);        //spin right, the left error is larger
-        pivot(quarter_rotation, 0);       //pivot left to adjust forward
+        pivot(quarter_rotation + abs(leftKp * derror) - leftKd * derror, 0);      //make larger (left) pivot
+        pivot(quarter_rotation, 1);   //pivot right
       }
       else
       {
-        spin(quarter_rotation, 0);        //spin left the right error is larger
-        pivot(quarter_rotation, 1);       //pivot right to adjust forward
+        pivot(quarter_rotation + ((abs(rightKp * derror))) - rightKd * derror, 1);      //maker larger (right) pivot
+        pivot(quarter_rotation, 0);  //pivot left to straighten up
       }
     }
   }
   else  if (bitRead(state, wander)) {
+    
     Serial.println("nothing to see here, I need to look for a wall");
-    if (lastState == 0) {
+    if (lastState == 0) {  // If you have tried to corner but couldn't find the wall again
       stop();
       delay(500);
       //reverse(half_rotation);
       spin(half_rotation, 0);
       forward(one_rotation);
       pivot(quarter_rotation, 1);
-    }else if (lastState < 0) {
-      forward(quarter_rotation);
-      spin(half_rotation, 1);
-      forward(one_rotation);
-      lastState++;
-    }else {
-      forward(quarter_rotation);
-      spin(half_rotation, 0);
-      forward(one_rotation);
-      lastState--;
+      if (bitRead(flag, obFront)){
+        spin(half_rotation, 0);
+      }
+    }else if (lastState < 0) { // If the last state was right wall following
+      forward(quarter_rotation);  //Move foward to clear the turn
+      spin(half_rotation, 1);  //Turn right 90 degrees
+      forward(two_rotation);  // Move forward 2 rotations
+      lastState++;  //Reset to random wander
+    }else {  // If the last state was left wall following
+      forward(quarter_rotation); //Move forward to clear the turn
+      spin(half_rotation, 0);  // turn left 90 degrees
+      forward(two_rotation); // Mover forward 2 rotations
+      lastState--; //Reset to random wander
     }
   }
 }
 
 
 /*
-  This is a sample updateSensors() function and it should be updated along with the description to reflect what you actually implemented
-  to meet the lab requirements.
+
+  Description: This function updates sensor values and determines what the new state should be
+  Inputs:
+
+           VOID
+
+  Outputs:
+
+           VOID
+
 */
 void updateSensors() {
-  //Serial.println("updateSensors\t");
   test_state = !test_state;             //LED to test the heartbeat of the timer interrupt routine
   digitalWrite(test_led, test_state);   //flash the timer interrupt LED
   flag = 0;                             //clear all sensor flags
   state = 0;                            //clear all state flags
   updateIR();                           //update IR readings and update flag variable and state machine
-  //updateSonar();                        //update Sonar readings and update flag variable and state machine
-  //updateSonar2();                     //there are 2 ways to read sonar data, this is the 2nd option, use whichever one works best for your hardware
+  updateSonar2();                     //there are 2 ways to read sonar data, this is the 2nd option, use whichever one works best for your hardware
   updateError();                        //update sensor current, previous, change in error
   updateState();                        //update State Machine based upon sensor readings
 }
@@ -502,8 +516,19 @@ int getLeftDistance(long value) {
 }
 
 /*
-   This is a sample updateIR() function, the description and code should be updated to take an average, consider all sensor and reflect
-   the necesary changes for the lab requirements.
+
+  Description: This function updates the current IR values of all four IR sensors
+
+  Inputs:
+
+           VOID
+
+
+
+  Outputs:
+
+           VOID
+
 */
 void updateIR() {
   int front, back, left, right;         //declare IR variables
@@ -515,195 +540,64 @@ void updateIR() {
   Serial.println(ri_curr);
 
   if (ri_curr < 12 && ri_curr > 0) {
-    Serial.println("following right wall");
     bitSet(flag, obRight);            //set the right obstacle
-    Serial.print("right wall obRight set\t\t");
-    Serial.println(obRight);
   } else {
-    if (bitRead(flag, obRight) == 1) {
-      Serial.println("Spin Wall modified");
-      spinWall = 2;
-    }
+   
     bitClear(flag, obRight);          //clear the right obstacle
   }
 
   if (li_curr < 12 && li_curr > 0) {
-    Serial.println("Left Wall ..........................");
     bitSet(flag, obLeft);
   } else {
-    if (bitRead(flag, obLeft) == 1) {
-      Serial.println("Spin Wall modified");
-      spinWall = 1;
-    }
     bitClear(flag, obLeft);           //clear the left obstacle
   }
 
-  li_curr += 2;
+  li_curr += 2;  //Adjust for left sensor error
   if (front < 12 && front > 0) {
-    //Serial.println("set front obstacle bit");
     bitSet(flag, obFront);            //set the front obstacle
   } else
     bitClear(flag, obFront);          //clear the front obstacle
 
-  //  print IR data
-  //  Serial.println("frontIR\tbackIR\tleftIR\trightIR");
-  //  Serial.print(front); Serial.print("\t");
-  //  Serial.print(back); Serial.print("\t");
-  //  Serial.print(left); Serial.print("\t");
-  //  Serial.println(right);
-  //  if (right > irMin - 50) {
-  //    //Serial.println("\t\tset right obstacle");
-  //    bitSet(flag, obRight);            //set the right obstacle
-  //  }
-  //  else
-  //    bitClear(flag, obRight);          //clear the right obstacle
-  //
-  //  if (left > irMin - 50) {
-  //    //Serial.println("\t\tset left obstacle");
-  //    bitSet(flag, obLeft);             //set the left obstacle
-  //  }
-  //  else
-  //    bitClear(flag, obLeft);           //clear the left obstacle
-  //
-  //  if (front > irMax - 50) {
-  //    //Serial.println("set front obstacle bit");
-  //    bitSet(flag, obFront);            //set the front obstacle
-  //  }
-  //  else
-  //    bitClear(flag, obFront);          //clear the front obstacle
-
-  //  if (back > irMin - 25) {
-  //    //Serial.println("set back obstacle bit");
-  //    bitSet(flag, obRear);             //set the back obstacle
-  //  }
-  //  else
-  //    bitClear(flag, obRear);           //clear the back obstacle
+  
 
   ///////////////////////update variables
-  //Serial.print(left);Serial.print("\t");
-  //Serial.println(right);
-  //ri_curr = right;             //log current sensor reading [right IR]
-  Serial.print("Left: ");
-  Serial.println(li_curr);
-  Serial.println(ri_curr);
+
   if ((ri_curr < irMax)) {
     ri_cerror = ri_curr - irMax;//calculate current error (too far positive, too close negative)
   } else if ((ri_curr > irMin)) {
-    ri_cerror = ri_curr - irMin;
+    ri_cerror = ri_curr - irMin; //calculate current error (too far positive, too close negative)
   } else
     ri_cerror = 0;                  //set error to zero if robot is in dead band
   ri_derror = ri_cerror - ri_perror; //calculate change in error
   ri_perror = ri_cerror;            //log current error as previous error [left sonar]
 
   if (li_curr < irMax) {
-    li_cerror = li_curr - irMax;   //calculate current error
+    li_cerror = li_curr - irMax;   //calculate current error (too far positive, too close negative)
   } else if (li_curr > irMin) {
-    li_cerror = li_curr - irMin;   //calculate current error
+    li_cerror = li_curr - irMin;   //calculate current error (too far positive, too close negative)
   } else
     li_cerror = 0;                  //error is zero if in deadband
   li_derror = li_cerror - li_perror; //calculate change in error
   li_perror = li_cerror;                //log reading as previous error
-
-  ///// print IR data
-  if (right > 0 && right < 1000) { //filter out garbage readings
-    //    Serial.print("right IR current = \t"); Serial.print(ri_curr);
-    //Serial.print("\tright IR cerror = \t"); Serial.println(ri_cerror);
-    //    Serial.print("\tright IR derror = \t"); Serial.print(ri_derror);
-    //    Serial.print("\tright IR perror = \t"); Serial.println(ri_perror);
-  }
-
-  if (left > 0 && left < 1000) { //filter out garbage readings
-    //    Serial.print("left IR current = \t"); Serial.print(li_curr);
-    //Serial.print("\tleft IR cerror = \t"); Serial.println(li_cerror);
-    //    Serial.print("\tleft IR derror = \t"); Serial.print(li_derror);
-    //    Serial.print("\tleft IR perror = \t"); Serial.println(li_perror);
-  }
 }
 
 /*
-   This is a sample updateSonar() function, the description and code should be updated to take an average, consider all sensors and reflect
-   the necesary changes for the lab requirements.
-*/
-void updateSonar() {
-  long left, right;             //sonar variables
-  pinMode(snrRight, OUTPUT);    //set the PING pin as an output, read right sensor
-  digitalWrite(snrRight, LOW);  //set the PING pin low first
-  delayMicroseconds(2);         //wait 2 us
-  digitalWrite(snrRight, HIGH); //trigger sonar by a 2 us HIGH PULSE
-  delayMicroseconds(5);         //wait 5 us
-  digitalWrite(snrRight, LOW);  //set pin low first again
-  pinMode(snrRight, INPUT);     //set pin as input with duration as reception
-  right = pulseIn(snrRight, HIGH);//measures how long the pin is high
 
-  pinMode(snrLeft, OUTPUT);     //set the PING pin as an output, read left sensor
-  digitalWrite(snrLeft, LOW);   //set the PING pin low first
-  delayMicroseconds(2);         //wait 2 us
-  digitalWrite(snrLeft, HIGH);  //trigger sonar by a 2 us HIGH PULSE
-  delayMicroseconds(5);         //wait 5 us
-  digitalWrite(snrLeft, LOW);   //set pin low first again
-  pinMode(snrLeft, INPUT);      //set pin as input with duration as reception
-  left = pulseIn(snrLeft, HIGH);//measures how long the pin is high
+  Description: This function updates the current IR values of all two Sonar sensors
 
-  if (right < 12) {
-    bitSet(flag, obFront);
-  }
-  if (left < 12) {
-    bitSet(flag, obFront);
-  }
+  Inputs:
 
-  ///////////////////////update variables
-  //  Serial.print(left); Serial.print("\t");
-  //  Serial.println(right);
-  rs_curr = right;             //log current sensor reading [right sonar]
-  if ((rs_curr > snrMax) || (rs_curr < snrMin))
-    rs_cerror = rs_curr - snrMax;    //calculate current error (too far positive, too close negative)
-  else
-    rs_cerror = 0;                  //set error to zero if robot is in dead band
-  rs_derror = rs_cerror - rs_perror; //calculate change in error
-  rs_perror = rs_cerror;            //log current error as previous error [left sonar]
+           VOID
 
-  ls_curr = left;                   //log current sensor reading [left sonar]
-  if ((ls_curr > snrMax) || (ls_curr < snrMin))
-    ls_cerror = ls_curr - snrMax;     //calculate current error
-  else
-    ls_cerror = 0;                  //error is zero if in deadband
-  ls_derror = ls_cerror - ls_perror; //calculate change in error
-  ls_perror = ls_cerror;                //log reading as previous error
+  Outputs:
 
-  ///// print sonar data
-  if (right > 0 && right < 1000) { //filter out garbage readings
-    //    Serial.print("right sonar current = \t"); Serial.print(rs_curr);
-    //    Serial.print("\tright sonar cerror = \t"); Serial.print(rs_cerror);
-    //    Serial.print("\tright sonar derror = \t"); Serial.print(rs_derror);
-    //    Serial.print("\tright sonar perror = \t"); Serial.println(rs_perror);
-  }
+           VOID
 
-  if (left > 0 && left < 1000) { //filter out garbage readings
-    //    Serial.print("left sonar current = \t"); Serial.print(ls_curr);
-    //    Serial.print("\tleft sonar cerror = \t"); Serial.print(ls_cerror);
-    //    Serial.print("\tleft sonar derror = \t"); Serial.print(ls_derror);
-    //    Serial.print("\tleft sonar perror = \t"); Serial.println(ls_perror);
-  }
-}
-
-
-/*
-  This is a sample updateSonar2() function, the description and code should be updated to take an average, consider all sensors and reflect
-  the necesary changes for the lab requirements.
 */
 void updateSonar2() {
   srRightAvg =  sonarRt.ping_in();//read right sonar in inches
   delay(50);                      //delay 50 ms
   srLeftAvg = sonarLt.ping_in();  //reaqd left sonar in inches
-  //print sonar data
-  //    Serial.print("lt snr:\t");
-  //    Serial.print(srLeftAvg);
-  //    Serial.print("rt snr:\t");
-  //    Serial.println(srRightAvg);
-  /////////////////////print sonar data
-  //    Serial.println("leftSNR\trightSNR");
-  //    Serial.print(left); Serial.print("\t");
-  //    Serial.println(right);
 
   ///////////////////////update variables
   rs_curr = srRightAvg;             //log current sensor reading [right sonar]
@@ -722,38 +616,43 @@ void updateSonar2() {
   ls_derror = ls_cerror - ls_perror; //calculate change in error
   ls_perror = ls_cerror;                //log reading as previous error
 
-  ///// print sonar data
-  if ((srRightAvg > 0 && srRightAvg < 20)) { //filter out garbage readings
-    //    Serial.print("right sonar current = \t"); Serial.print(rs_curr);
-    //    Serial.print("\tright sonar cerror = \t"); Serial.print(rs_cerror);
-    //    Serial.print("\tright sonar derror = \t"); Serial.print(rs_derror);
-    //    Serial.print("\tright sonar perror = \t"); Serial.println(rs_perror);
-  }
-
-  if ((srRightAvg > 0 && srRightAvg < 20)) { //filter out garbage readings
-    //    Serial.print("left sonar current = \t"); Serial.print(ls_curr);
-    //    Serial.print("\tleft sonar cerror = \t"); Serial.print(ls_cerror);
-    //    Serial.print("\tleft sonar derror = \t"); Serial.print(ls_derror);
-    //    Serial.print("\tleft sonar perror = \t"); Serial.println(ls_perror);
-  }
 }
 
 /*
-   This function will update all of the error constants to be used for P and PD control
-   store previous error to calculate derror = curr_sensor-prev_sensor, side_derror = side front sensor - side back sensor
+
+  Description: This function updates the errors of each for every wall (right error, left error, distance from center)
+
+  Inputs:
+
+           VOID
+
+  Outputs:
+
+           VOID
+
 */
 void updateError() {
   left_derror = ls_cerror - li_cerror; //difference between left front and back sensor, use threshold for robot mostly parallel to wall
   right_derror = rs_cerror - ri_cerror; //difference between right front and back sensor, use threshold for robot mostly parallel to wall
-  //derror = ls_cerror - rs_cerror;//use sonar data for difference error
+
   derror = li_cerror - ri_cerror; //use IR data for difference error
-  //  Serial.print("left derror\t"); Serial.print(left_derror);
-  //  Serial.print("\tright derror\t"); Serial.println(right_derror);
+
 }
 
 /*
-   This is a sample updateState() function, the description and code should be updated to reflect the actual state machine that you will implement
-   based upon the the lab requirements.
+
+  Description: This function updates the state of the robot
+
+  Inputs:
+
+           VOID
+
+
+
+  Outputs:
+
+           VOID
+
 */
 void updateState() {
   if (!(flag)) { //no sensors triggered
@@ -781,23 +680,14 @@ void updateState() {
     bitClear(state, wander);  //clear wander state
     bitClear(state, center);  //clear follow wall state
   }
-  //  else if (bitRead(flag, obLeft) && bitRead(flag, obRight) ) {
-  //    Serial.println("\tset follow hallway state");
-  //    bitSet(state, center);      //set the hallway state
-  //    //clear all other bits
-  //    bitClear(state, fright);    //clear follow wall state
-  //    bitClear(state, wander);    //clear wander state
-  //    bitClear(state, fleft);     //clear follow wall state
-  //  }
-
-  //print flag byte
-  //  Serial.println("\trtSNR\tltSNR\tltIR\trtIR\trearIR\tftIR");
-  //  Serial.print("flag byte: ");
-  //  Serial.println(flag, BIN);
-  //print state byte
-  //  Serial.println("\tfollowHall\tfollowLeft\tfollowRight\twander\tavoid");
-  //  Serial.print("state byte: ");
-  //  Serial.println(state, BIN);
+    else if (bitRead(flag, obLeft) && bitRead(flag, obRight) ) {
+      Serial.println("\tset follow hallway state");
+      bitSet(state, center);      //set the hallway state
+      //clear all other bits
+      bitClear(state, fright);    //clear follow wall state
+      bitClear(state, wander);    //clear wander state
+      bitClear(state, fleft);     //clear follow wall state
+    }
 }
 
 
@@ -884,10 +774,7 @@ void stop() {
 */
 void runToStop ( void ) {
   int runNow = 1;
-  //  stepperRight.setMaxSpeed(max_spd);
-  //  stepperLeft.setMaxSpeed(max_spd);
-  //  stepperRight.setSpeed(robot_spd);
-  //  stepperLeft.setSpeed(robot_spd);
+
   while (runNow) {
     if (!stepperRight.run()) {
       bitClear(state, movingR);  // clear bit for right motor moving
